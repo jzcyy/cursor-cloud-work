@@ -243,9 +243,17 @@
       timeUp: false,
     };
     goal.updatedAt = Date.now();
+    state.parkedDay = null;
     ensureAudio();
     persist();
     go("focus");
+  }
+
+  function parkToday() {
+    state.notice = null;
+    state.parkedDay = Logic.dayKey(Date.now());
+    persist();
+    go("home");
   }
 
   function requestStart(goalId, stepId) {
@@ -611,8 +619,19 @@
       ? `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(short.goal.id)}" data-step="${esc(short.step.id)}">改做更短的 · ${short.mins} 分钟</button>`
       : "";
     const shorterHint = shorter ? `<p class="hint">更短的一步是「${esc(short.step.title)}」。</p>` : "";
-    const cue = Logic.returnCue(Logic.warmth(state.log, Date.now()).label);
-    return `<section class="card hero"><p class="kicker">当前一步 · ${esc(goal.title)}</p><h1 data-testid="step-title">${esc(stats.next.title)}</h1>${cue ? `<p class="hint" data-testid="return-cue">${esc(cue)}</p>` : ""}<p class="meta">约 ${mins} 分钟 · 第 ${index} 步，共 ${stats.total} 步</p>${segmentsHtml(goal)}<p class="reassure" data-testid="next-line">${esc(Logic.nextStepLine(stats.pending, mins))}</p><div class="actions"><button type="button" class="btn btn-primary" data-testid="start-focus" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(stats.next.id)}">开始这 ${mins} 分钟</button>${shorter}</div>${shorterHint}</section>`;
+    const now = Date.now();
+    const parked = Logic.isParked(state.parkedDay, now);
+    const cue = parked ? "" : Logic.returnCue(Logic.warmth(state.log, now).label);
+    const enough = Logic.enoughLine(Logic.todayDone(state.log, now).length);
+    const note = parked
+      ? `<p class="hint" data-testid="enough-line">${esc(enough || "下次从这一步开始就好。")}</p>`
+      : `${cue ? `<p class="hint" data-testid="return-cue">${esc(cue)}</p>` : ""}${enough ? `<p class="hint" data-testid="enough-line">${esc(enough)}</p>` : ""}`;
+    const title = parked
+      ? `<h1>今天先停在这里</h1>${note}<p class="park-next" data-testid="step-title">${esc(stats.next.title)}</p>`
+      : `<h1 data-testid="step-title">${esc(stats.next.title)}</h1>${note}`;
+    const startClass = parked ? "btn btn-ghost" : "btn btn-primary";
+    const startLabel = parked ? `还是开始这 ${mins} 分钟` : `开始这 ${mins} 分钟`;
+    return `<section class="card hero"${parked ? ` data-testid="parked-hero"` : ""}><p class="kicker">${parked ? esc(goal.title) : `当前一步 · ${esc(goal.title)}`}</p>${title}<p class="meta">约 ${mins} 分钟 · 第 ${index} 步，共 ${stats.total} 步</p>${segmentsHtml(goal)}<p class="reassure" data-testid="next-line">${esc(Logic.nextStepLine(stats.pending, mins))}</p><div class="actions"><button type="button" class="${startClass}" data-testid="start-focus" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(stats.next.id)}">${startLabel}</button>${shorter}</div>${shorterHint}</section>`;
   }
 
   function finishedLabel(goal) {
@@ -716,7 +735,7 @@
         : "连续到昨天。今天再完成一步就能接上。";
     const suggested = Logic.suggestedNext(state.goals, state.currentGoalId, state.settings);
     const nextCard = suggested
-      ? `<section class="card" data-testid="next-from-progress" style="margin-top:0.9rem"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p><button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
+      ? `<section class="card" data-testid="next-from-progress" style="margin-top:0.9rem"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p>${Logic.isParked(state.parkedDay, now) ? `<p class="hint" data-testid="parked-note">今天先停在这里。这张卡片留到下次也可以。</p>` : ""}<button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
       : "";
     return `<section data-testid="progress-view">
       <div class="intro"><p class="kicker">看见没有放弃</p><h1>进度</h1><p class="lede">完成度只计算真正做完的步骤。跳过会留下来，但不会假装它已经完成。</p></div>
@@ -843,15 +862,16 @@
     }
     const status = active.timeUp ? "时间到了" : active.running ? "专注中" : "已暂停";
     const left = Logic.remainingSeconds(active, Date.now());
+    const progress = active.plannedSec ? (active.plannedSec - left) / active.plannedSec : 0;
     const shrink = !active.timeUp && left > 120
       ? `<button type="button" class="btn btn-ghost" data-action="shrink-2" data-testid="shrink-2">只再做 2 分钟</button>`
       : "";
     const sheet = active.timeUp
-      ? `<div class="sheet"><h2>这一小段时间到了</h2><p>可以收工，也可以再续 5 分钟。兴趣还在的时候停，这一步也算落地。</p><div class="controls"><button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">完成这一步</button><button type="button" class="btn btn-primary" data-action="extend-5">再续 5 分钟</button><button type="button" class="btn btn-ghost" data-action="ask-skip">跳过</button></div></div>`
+      ? `<div class="sheet"><h2>这一小段时间到了</h2><p>可以收工，也可以再续 5 分钟。兴趣还在的时候停，这一步也算落地。</p><div class="controls"><button type="button" class="btn btn-primary" data-action="complete-step" data-testid="complete-step">完成这一步</button><button type="button" class="btn btn-ghost" data-action="extend-5">再续 5 分钟</button><button type="button" class="btn btn-ghost" data-action="ask-skip">跳过</button></div></div>`
       : `<p class="soon" data-soon ${left <= 60 ? "" : "hidden"}>还不到 1 分钟。做完就可以停。</p>
         <p class="soon" data-half hidden>已经过了一半。停在这里也算做了。</p>
         <div class="controls">
-          <button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">这一步完成</button>
+          <button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step" data-complete-label>${progress >= 0.5 ? "停在这里" : "这一步完成"}</button>
           ${shrink}
           <button type="button" class="btn btn-ghost" data-action="toggle-pause">${active.running ? "暂停" : "继续"}</button>
           ${dropTimerButton()}
@@ -894,7 +914,7 @@
     const other = goal ? otherPendingGoal(goal.id) : otherPendingGoal(null);
     const buttons = [];
     if (notice.type === "step-done") {
-      buttons.push(`<button type="button" class="btn btn-primary" data-action="dismiss-notice" data-testid="stop-today">今天先停在这里</button>`);
+      buttons.push(`<button type="button" class="btn btn-primary" data-action="park-today" data-testid="stop-today">今天先停在这里</button>`);
       if (state.settings.breakMinutes > 0) {
         buttons.push(`<button type="button" class="btn btn-ghost" data-action="start-break">休息 ${state.settings.breakMinutes} 分钟</button>`);
       }
@@ -951,6 +971,12 @@
     document.querySelectorAll("[data-half]").forEach((el) => {
       el.hidden = progress < 0.5 || left <= 60;
     });
+    if (!active.timeUp) {
+      document.querySelectorAll("[data-complete-label]").forEach((el) => {
+        const next = progress >= 0.5 ? "停在这里" : "这一步完成";
+        if (el.textContent !== next) el.textContent = next;
+      });
+    }
   }
 
   function paint() {
@@ -1171,6 +1197,7 @@
     } else if (action === "start-step") requestStart(button.dataset.goal, button.dataset.step);
     else if (action === "toggle-pause") togglePause();
     else if (action === "leave-focus" || action === "dismiss-notice") leaveFocus();
+    else if (action === "park-today") parkToday();
     else if (action === "complete-step") finishStep("done");
     else if (action === "ask-skip") {
       const step = state.active ? findStep(goalById(state.active.goalId), state.active.stepId) : null;

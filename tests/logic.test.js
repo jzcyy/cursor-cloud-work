@@ -258,6 +258,28 @@ test("suggestedNext stays on the current goal before falling back to the shortes
   assert.equal(Logic.suggestedNext([], "missing", settings), null);
 });
 
+test("stopping for today only lasts the local day", () => {
+  const now = at(2026, 10, 18, 18);
+  const state = Logic.seedState(now);
+  assert.equal(state.parkedDay, null);
+  assert.equal(Logic.isParked(null, now), false);
+  assert.equal(Logic.enoughLine(0), "");
+  assert.equal(Logic.enoughLine(1), "今天已经落地 1 步。可以停，也可以再走一小步。");
+  assert.match(Logic.enoughLine(2), /落地 2 步/);
+
+  state.parkedDay = Logic.dayKey(now);
+  const kept = Logic.normalizeState(state, now);
+  assert.equal(kept.parkedDay, Logic.dayKey(now));
+  assert.equal(Logic.isParked(kept.parkedDay, now), true);
+  assert.equal(Logic.isParked(kept.parkedDay, at(2026, 10, 19, 9)), false);
+
+  const junk = Logic.normalizeState({ ...state, parkedDay: "tomorrow" }, now);
+  assert.equal(junk.parkedDay, null);
+  const unpadded = Logic.normalizeState({ ...state, parkedDay: "2026-10-5" }, now);
+  assert.equal(unpadded.parkedDay, "2026-10-5");
+  assert.equal(Logic.isParked(unpadded.parkedDay, at(2026, 10, 5, 8)), true);
+});
+
 test("todayDone keeps finished steps from the local day in order", () => {
   const now = at(2026, 10, 18, 18);
   const items = Logic.todayDone(

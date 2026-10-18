@@ -137,8 +137,8 @@
       if (key === today) todayCount += 1;
       else if (key === yesterday) yesterdayCount += 1;
     });
-    if (todayCount >= 2) return { level: 3, label: "正热", hint: "今天已经走完多步，兴趣还热着。" };
-    if (todayCount === 1) return { level: 2, label: "微温", hint: "今天续过一次。再走一步会更稳。" };
+    if (todayCount >= 2) return { level: 3, label: "正热", hint: "今天已经走完多步。兴趣还热着，可以停。" };
+    if (todayCount === 1) return { level: 2, label: "微温", hint: "今天已经落地一步。停在这里也算接上了。" };
     if (yesterdayCount > 0) return { level: 1, label: "余温", hint: "昨天有进展。今天任意一小步就能接上。" };
     return { level: 0, label: "凉了", hint: "没关系。挑最短的一步，做完即可。" };
   }
@@ -248,6 +248,28 @@ function todayDone(log, now) {
     if (warmthLabel === "余温") return "昨天有进展。今天从这一小步接上。";
     if (warmthLabel === "凉了") return "隔了一阵也没关系。从这一小步回来。";
     return "";
+  }
+
+  function parkedDayKey(value) {
+    if (typeof value !== "string") return null;
+    const match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return dayKey(date.getTime());
+  }
+
+  function isParked(parkedDay, now) {
+    return parkedDayKey(parkedDay) === dayKey(now);
+  }
+
+  function enoughLine(doneCount) {
+    const count = Math.max(0, Math.round(Number(doneCount) || 0));
+    if (count <= 0) return "";
+    return `今天已经落地 ${count} 步。可以停，也可以再走一小步。`;
   }
 
   function tinyGoal(title, now) {
@@ -381,6 +403,7 @@ function todayDone(log, now) {
       log: [],
       active: null,
       notice: null,
+      parkedDay: null,
     };
   }
 
@@ -531,6 +554,7 @@ function todayDone(log, now) {
       log: normalizeLog(raw.log),
       active,
       notice,
+      parkedDay: parkedDayKey(raw.parkedDay),
     };
   }
 
@@ -558,6 +582,8 @@ function todayDone(log, now) {
     todayDone,
     nextStepLine,
     returnCue,
+    isParked,
+    enoughLine,
     tinyGoal,
     splitOpener,
     suggestedNext,
