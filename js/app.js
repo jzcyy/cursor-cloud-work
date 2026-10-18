@@ -32,6 +32,7 @@
     focusStepId: null,
     storageError: "",
     showFinished: false,
+    showLater: false,
     armDrop: false,
     tinyError: "",
     suggest: null,
@@ -82,6 +83,15 @@
     if (m === 0) return `${r} 秒`;
     if (r === 0) return `${m} 分钟`;
     return `${m} 分 ${r} 秒`;
+  }
+
+  function liveTitle(active) {
+    if (!active) return "";
+    const left = formatClock(Logic.remainingSeconds(active, Date.now()));
+    if (active.phase === "break") return active.running ? `${left} 休息` : `${left} 休息已暂停`;
+    if (active.timeUp) return "时间到了";
+    if (!active.running) return `${left} 已暂停`;
+    return left;
   }
 
   function formatWhen(ts) {
@@ -493,7 +503,8 @@
   function renderShell(content) {
     const view = app.view;
     const titles = { home: "今日", progress: "进度", settings: "设置", focus: "专注", editor: "编辑" };
-    document.title = `${titles[view] || "碎步"} · 碎步`;
+    const ticking = liveTitle(state.active);
+    document.title = ticking ? `${ticking} · 碎步` : `${titles[view] || "碎步"} · 碎步`;
     const theme = document.querySelector('meta[name="theme-color"]');
     if (theme) theme.setAttribute("content", view === "focus" ? "#16110d" : "#efe7d8");
     const nav = ["home", "progress", "settings"]
@@ -650,11 +661,24 @@
   function renderStepList(goal, active) {
     const stats = Logic.goalStats(goal, state.settings);
     const finished = finishedLabel(goal);
-    const visible = !finished || app.showFinished ? goal.steps : goal.steps.filter((step) => step.status === "pending");
+    const laterCount = goal.steps.filter((step) => {
+      if (step.status !== "pending") return false;
+      if (stats.next && step.id === stats.next.id) return false;
+      if (active && active.stepId === step.id) return false;
+      return true;
+    }).length;
+    let visible = goal.steps;
+    if (finished && !app.showFinished) visible = visible.filter((step) => step.status === "pending");
+    if (laterCount > 0 && !app.showLater) {
+      visible = visible.filter((step) => step.status !== "pending" || (stats.next && step.id === stats.next.id) || (active && active.stepId === step.id));
+    }
     const toggle = finished
       ? `<button type="button" class="btn btn-quiet done-toggle" data-action="toggle-finished" data-testid="toggle-finished" aria-expanded="${app.showFinished}">${app.showFinished ? "收起已完成" : `${esc(finished)}，点开看看`}</button>`
       : "";
-    return `${toggle}<ol class="steps">${visible
+    const laterToggle = laterCount
+      ? `<button type="button" class="btn btn-quiet done-toggle" data-action="toggle-later" data-testid="toggle-later" aria-expanded="${app.showLater}">${app.showLater ? "收起后面的步骤" : `后面还有 ${laterCount} 步，先不用看`}</button>`
+      : "";
+    return `${toggle}${laterToggle}<ol class="steps">${visible
       .map((step) => {
         const mins = Logic.stepMinutes(step, state.settings);
         const isNext = stats.next && stats.next.id === step.id;
@@ -742,7 +766,7 @@
         : "连续到昨天。今天再完成一步就能接上。";
     const suggested = Logic.suggestedNext(state.goals, state.currentGoalId, state.settings);
     const nextCard = suggested
-      ? `<section class="card" data-testid="next-from-progress"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p>${Logic.isParked(state.parkedDay, now) ? `<p class="hint" data-testid="parked-note">今天先停在这里。这张卡片留到下次也可以。</p>` : ""}<button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
+      ? `<section class="card" data-testid="next-from-progress"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p>${Logic.isParked(state.parkedDay, now) ? `<p class="hint" data-testid="parked-note">今天先停在这里。这张卡片留到下次也可以。</p>` : ""}<button type="button" class="${Logic.isParked(state.parkedDay, now) ? "btn btn-ghost" : "btn btn-primary"}" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
       : "";
     return `<section data-testid="progress-view">
       <div class="intro"><p class="kicker">看见没有放弃</p><h1>进度</h1><p class="lede">完成度只计算真正做完的步骤。跳过会留下来，但不会假装它已经完成。</p></div>
@@ -779,6 +803,7 @@
         <p class="choice-label">做完一步之后的休息</p>
         <p class="hint">休息结束不会自动开始下一步。你可以回来，也可以今天就停。</p>
         <div class="choices">${breaks}</div>
+        <p class="hint" data-testid="settings-now">已记住：默认专注 ${state.settings.focusMinutes} 分钟，${state.settings.breakMinutes ? `做完休息 ${state.settings.breakMinutes} 分钟` : "做完不休息"}。</p>
         <div class="switch">
           <div><p class="choice-label">时间到时响一声</p><p class="hint">很轻的两声。浏览器如果拦截声音，界面上的提示仍然在。</p></div>
           <button type="button" class="btn btn-ghost" data-action="toggle-sound" aria-pressed="${state.settings.sound}">${state.settings.sound ? "开" : "关"}</button>
@@ -1222,6 +1247,11 @@
         if (el.textContent !== next) el.textContent = next;
       });
     }
+    const ticking = liveTitle(active);
+    if (ticking) {
+      const nextTitle = `${ticking} · 碎步`;
+      if (document.title !== nextTitle) document.title = nextTitle;
+    }
   }
 
   function paint() {
@@ -1446,6 +1476,7 @@
       state.currentGoalId = button.dataset.id;
       state.notice = null;
       app.suggest = null;
+      app.showLater = false;
       persist();
       go("home");
     } else if (action === "start-step") requestStart(button.dataset.goal, button.dataset.step);
@@ -1470,6 +1501,9 @@
     else if (action === "drop-timer") dropTimer();
     else if (action === "toggle-finished") {
       app.showFinished = !app.showFinished;
+      paint();
+    } else if (action === "toggle-later") {
+      app.showLater = !app.showLater;
       paint();
     } else if (action === "start-break") startBreak();
     else if (action === "end-break") endBreak(false);
@@ -1628,6 +1662,13 @@
     }
     if (form.matches("[data-action=save-goal]")) {
       event.preventDefault();
+      const current = document.activeElement;
+      if (current && current.closest && current.closest("[data-testid=split-suggest]")) return;
+      if (app.suggest && app.suggest.where === "editor") {
+        app.suggest.message = "先点「用这些步骤」或「先不用」，再保存。建议还没写进列表。";
+        paint();
+        return;
+      }
       saveGoal();
       return;
     }
@@ -1638,6 +1679,10 @@
   }
 
   function onKeydown(event) {
+    if (event.key === "Enter" && event.target.closest && event.target.closest("[data-testid=split-suggest]") && event.target.matches("input")) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape") {
       if (app.dialog) {
         app.dialog = null;
@@ -1674,7 +1719,7 @@
   document.addEventListener("submit", onSubmit);
   document.addEventListener("keydown", onKeydown);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") catchUp(false);
+    if (document.visibilityState === "visible" && !catchUp(false)) patchTimer();
   });
   syncFromHash();
   catchUp(false);

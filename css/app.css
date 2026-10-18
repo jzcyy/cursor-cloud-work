@@ -486,7 +486,9 @@ body:has(.app-focus)::before { height: 2px; opacity: 0.45; }
   .hero { padding-right: 1.05rem; }
   .quick, .minutes-row, .banner, .goal-head, .today-list li, .suggest-row, .switch { flex-direction: column; align-items: stretch; }
   .suggest-row, .minutes-row { display: flex; }
-  .goal-head .btn, .quick-actions .btn, .step-side .btn { flex: 1 1 auto; }
+  .goal-head .btn, .quick-actions .btn { flex: 1 1 auto; }
+  .step-side .btn-ghost { flex: 1 1 100%; }
+  .step-side .btn-quiet { flex: 0 1 auto; }
   .chart { gap: 3px; height: 140px; }
   .bar span { font-size: 0.62rem; }
   .stat strong { font-size: 2.15rem; }
