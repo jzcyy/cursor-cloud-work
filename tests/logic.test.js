@@ -168,9 +168,43 @@ test("timer remaining, pause, and extend do not drift", () => {
   assert.equal(extended.running, true);
   assert.equal(extended.timeUp, false);
 
+  const shrunk = Logic.shrinkActive(active, 30, now);
+  assert.equal(shrunk.remainingSec, 30);
+  assert.equal(shrunk.plannedSec, 55);
+  assert.equal(Logic.remainingSeconds(shrunk, now), 30);
+  assert.equal(shrunk.runStartedAt, now);
+
+  const pausedShort = { remainingSec: 20, running: false, runStartedAt: null, plannedSec: 40, timeUp: false };
+  assert.equal(Logic.shrinkActive(pausedShort, 30, now), pausedShort);
+
   const caught = Logic.catchUpActive(active, now + 1_000_000);
   assert.equal(caught.expired, true);
   assert.equal(caught.active.remainingSec, 0);
   assert.equal(caught.active.timeUp, true);
   assert.equal(Logic.catchUpActive(paused, now).expired, false);
+});
+
+test("early finish is described as landing", () => {
+  assert.match(Logic.describeElapsed(0), /落地/);
+  assert.match(Logic.describeElapsed(19), /落地/);
+  assert.match(Logic.describeElapsed(45), /45 秒/);
+  assert.equal(Logic.describeElapsed(120), "用了 2 分钟。");
+  assert.equal(Logic.describeElapsed(90), "用了 1 分 30 秒。");
+});
+
+test("todayDone keeps finished steps from the local day in order", () => {
+  const now = at(2026, 10, 18, 18);
+  const items = Logic.todayDone(
+    [
+      { outcome: "done", at: at(2026, 10, 18, 15), stepTitle: "下午" },
+      { outcome: "skipped", at: at(2026, 10, 18, 10), stepTitle: "跳过" },
+      { outcome: "done", at: at(2026, 10, 17, 9), stepTitle: "昨天" },
+      { outcome: "done", at: at(2026, 10, 18, 9), stepTitle: "上午" },
+    ],
+    now
+  );
+  assert.deepEqual(
+    items.map((item) => item.stepTitle),
+    ["上午", "下午"]
+  );
 });

@@ -183,6 +183,7 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 .mark-skip { border-color: #b7ab9c; color: #8a7d6d; }
 .mark-next { border-color: var(--ember); }
 .step-title { margin: 0; font-weight: 650; }
+.done-toggle { margin: 0 0 0.45rem; padding-left: 0; }
 .step-side { display: flex; align-items: center; gap: 0.45rem; }
 
 .quick { display: flex; gap: 0.5rem; }
@@ -361,6 +362,12 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 .done-mark.skip::after { border: 0; width: 16px; height: 3px; background: white; transform: none; }
 .done-mark.rest { background: var(--gold); }
 .keys { color: #b7aa9c; font-size: 0.85rem; margin: 0.4rem 0 0; }
+.focus-why, .soon { color: #d5c7b6; max-width: 28em; margin: 0; }
+.soon { color: #f0c7b0; }
+.today-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.65rem; }
+.today-list li { display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; }
+.sheet .seg { background: #4a4036; }
+.sheet .seg-done { background: var(--moss); }
 
 .footer { margin-top: 1.5rem; color: var(--muted); font-size: 0.9rem; }
 .fatal { max-width: 36rem; margin: 4rem auto; padding: 1rem; }
@@ -375,7 +382,7 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 }
 @media (max-width: 640px) {
   .top-inner { flex-wrap: wrap; padding: 0.6rem 0; }
-  .quick, .minutes-row, .banner, .goal-head { flex-direction: column; align-items: stretch; }
+  .quick, .minutes-row, .banner, .goal-head, .today-list li { flex-direction: column; align-items: stretch; }
   .chart { gap: 3px; }
   .bar span { font-size: 0.62rem; }
 }

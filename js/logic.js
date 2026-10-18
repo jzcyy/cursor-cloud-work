@@ -192,17 +192,50 @@
     };
   }
 
-  function extendActive(active, extraSec, now) {
-    const left = remainingSeconds(active, now);
-    return {
-      ...active,
-      plannedSec: Number(active.plannedSec) + extraSec,
-      remainingSec: left + extraSec,
-      running: true,
-      runStartedAt: now,
-      timeUp: false,
-    };
-  }
+function extendActive(active, extraSec, now) {
+  const left = remainingSeconds(active, now);
+  return {
+    ...active,
+    plannedSec: Number(active.plannedSec) + extraSec,
+    remainingSec: left + extraSec,
+    running: true,
+    runStartedAt: now,
+    timeUp: false,
+  };
+}
+
+function shrinkActive(active, capSec, now) {
+  if (!active) return active;
+  const cap = Math.max(1, Math.round(Number(capSec) || 0));
+  const left = remainingSeconds(active, now);
+  if (left <= cap) return active;
+  const elapsed = Math.max(0, Number(active.plannedSec) - left);
+  return {
+    ...active,
+    plannedSec: elapsed + cap,
+    remainingSec: cap,
+    running: Boolean(active.running),
+    runStartedAt: active.running ? now : null,
+    timeUp: false,
+  };
+}
+
+function describeElapsed(elapsedSec) {
+  const sec = Math.max(0, Math.round(Number(elapsedSec) || 0));
+  if (sec < 20) return "刚坐下就收工了。兴趣还在的时候停，这一步也算落地。";
+  if (sec < 60) return `用了 ${sec} 秒。短到你把它做完了。`;
+  const minutes = Math.floor(sec / 60);
+  const rest = sec % 60;
+  if (rest === 0) return `用了 ${minutes} 分钟。`;
+  return `用了 ${minutes} 分 ${rest} 秒。`;
+}
+
+function todayDone(log, now) {
+  const key = dayKey(now);
+  return doneEvents(log)
+    .filter((entry) => dayKey(entry.at) === key)
+    .sort((a, b) => Number(a.at) - Number(b.at));
+}
 
   function catchUpActive(active, now) {
     if (!active || !active.running) return { active, expired: false };
@@ -462,6 +495,9 @@
     pauseActive,
     resumeActive,
     extendActive,
+    shrinkActive,
+    describeElapsed,
+    todayDone,
     catchUpActive,
     seedState,
     normalizeState,

@@ -31,6 +31,7 @@
     focusTitle: false,
     focusStepId: null,
     storageError: "",
+    showFinished: false,
   };
 
   let state = Store.load();
@@ -361,6 +362,15 @@
     paint();
   }
 
+  function shrinkTwo() {
+    if (!state.active || state.active.phase !== "focus" || state.active.timeUp) return;
+    const next = Logic.shrinkActive(state.active, 2 * 60, Date.now());
+    if (next === state.active) return;
+    state.active = next;
+    persist();
+    paint();
+  }
+
   function togglePause() {
     const active = state.active;
     if (!active || active.timeUp) return;
@@ -522,14 +532,29 @@
     const index = goal.steps.findIndex((step) => step.id === stats.next.id) + 1;
     const short = Logic.shortestPending(state.goals, state.settings);
     const shorter = short && short.step.id !== stats.next.id && short.mins < mins
-      ? `<p class="hint">如果这一步还是太大：试试「${esc(short.step.title)}」，只要 ${short.mins} 分钟。</p>`
+      ? `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(short.goal.id)}" data-step="${esc(short.step.id)}">改做更短的 · ${short.mins} 分钟</button>`
       : "";
-    return `<section class="card hero"><p class="kicker">当前一步 · ${esc(goal.title)}</p><h1 data-testid="step-title">${esc(stats.next.title)}</h1><p class="meta">约 ${mins} 分钟 · 第 ${index} 步，共 ${stats.total} 步</p>${segmentsHtml(goal)}<p class="reassure">还剩 ${stats.pending} 步，加起来约 ${stats.remainingMin} 分钟。现在只做这 ${mins} 分钟。</p><div class="actions"><button type="button" class="btn btn-primary" data-testid="start-focus" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(stats.next.id)}">开始这 ${mins} 分钟</button></div>${shorter}</section>`;
+    const shorterHint = shorter ? `<p class="hint">更短的一步是「${esc(short.step.title)}」。</p>` : "";
+    return `<section class="card hero"><p class="kicker">当前一步 · ${esc(goal.title)}</p><h1 data-testid="step-title">${esc(stats.next.title)}</h1><p class="meta">约 ${mins} 分钟 · 第 ${index} 步，共 ${stats.total} 步</p>${segmentsHtml(goal)}<p class="reassure">还剩 ${stats.pending} 步，加起来约 ${stats.remainingMin} 分钟。现在只做这 ${mins} 分钟。</p><div class="actions"><button type="button" class="btn btn-primary" data-testid="start-focus" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(stats.next.id)}">开始这 ${mins} 分钟</button>${shorter}</div>${shorterHint}</section>`;
+  }
+
+  function finishedLabel(goal) {
+    const done = goal.steps.filter((step) => step.status === "done").length;
+    const skipped = goal.steps.filter((step) => step.status === "skipped").length;
+    const parts = [];
+    if (done) parts.push(`已完成 ${done} 步`);
+    if (skipped) parts.push(`跳过 ${skipped} 步`);
+    return parts.join("，");
   }
 
   function renderStepList(goal, active) {
     const stats = Logic.goalStats(goal, state.settings);
-    return `<ol class="steps">${goal.steps
+    const finished = finishedLabel(goal);
+    const visible = !finished || app.showFinished ? goal.steps : goal.steps.filter((step) => step.status === "pending");
+    const toggle = finished
+      ? `<button type="button" class="btn btn-quiet done-toggle" data-action="toggle-finished" data-testid="toggle-finished" aria-expanded="${app.showFinished}">${app.showFinished ? "收起已完成" : `${esc(finished)}，点开看看`}</button>`
+      : "";
+    return `${toggle}<ol class="steps">${visible
       .map((step) => {
         const mins = Logic.stepMinutes(step, state.settings);
         const isNext = stats.next && stats.next.id === step.id;
@@ -579,6 +604,15 @@
         return `<div class="bar ${day.count ? "has" : ""} ${day.isToday ? "today" : ""}" title="${esc(day.label)} ${day.count} 步"><b><i style="height:${height}%"></i></b><span>${day.isToday ? "今" : esc(day.label)}</span></div>`;
       })
       .join("");
+    const today = Logic.todayDone(state.log, now);
+    const todayHtml = today.length
+      ? `<ol class="today-list">${today
+          .map(
+            (entry) =>
+              `<li><strong>${esc(entry.stepTitle)}</strong><span class="muted small">${esc(entry.goalTitle)} · ${esc(formatWhen(entry.at))}</span></li>`
+          )
+          .join("")}</ol>`
+      : `<p>今天还没有。任意一小步都会出现在这里。</p>`;
     const last = state.log[state.log.length - 1];
     const lastHtml = last
       ? `<section class="card" data-testid="last-session"><h2>上一次专注</h2><p><strong>${last.outcome === "done" ? "完成了" : "跳过了"}「${esc(last.stepTitle)}」</strong></p><p class="muted">${esc(formatWhen(last.at))} · ${esc(last.goalTitle)}</p><p>计划 ${formatSpent(last.plannedSec)}，实际 ${formatSpent(last.elapsedSec)}。${last.outcome === "skipped" ? "这次不计入完成度。" : ""}</p></section>`
@@ -603,6 +637,10 @@
         <article class="card stat"><p class="kicker">连续天数</p><strong>${streak.days}</strong><p class="small muted">${esc(streakHint)}</p></article>
         <article class="card stat"><p class="kicker">兴趣温度</p><strong>${esc(warmth.label)}</strong>${heatHtml(warmth)}<p class="small muted">${esc(warmth.hint)}</p></article>
       </div>
+      <section class="card" style="margin-top:0.9rem" data-testid="today-done">
+        <h2>今天落地的小步</h2>
+        ${todayHtml}
+      </section>
       <section class="card" style="margin-top:0.9rem">
         <h2>近 14 天完成的步数</h2>
         <div class="chart" data-testid="chart" role="img" aria-label="近 14 天共完成 ${sum} 步">${bars}</div>
@@ -715,12 +753,18 @@
       </section>`;
     }
     const status = active.timeUp ? "时间到了" : active.running ? "专注中" : "已暂停";
+    const left = Logic.remainingSeconds(active, Date.now());
+    const shrink = !active.timeUp && left > 120
+      ? `<button type="button" class="btn btn-ghost" data-action="shrink-2" data-testid="shrink-2">只再做 2 分钟</button>`
+      : "";
     const sheet = active.timeUp
-      ? `<div class="sheet"><h2>这一小段时间到了</h2><p>可以收工，也可以再续 5 分钟。收工的时候兴趣还在，比硬撑更不容易放弃。</p><div class="controls"><button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">完成这一步</button><button type="button" class="btn btn-primary" data-action="extend-5">再续 5 分钟</button><button type="button" class="btn btn-ghost" data-action="ask-skip">跳过</button></div></div>`
-      : `<div class="controls">
-          <button type="button" class="btn btn-ghost" data-action="toggle-pause">${active.running ? "暂停" : "继续"}</button>
+      ? `<div class="sheet"><h2>这一小段时间到了</h2><p>可以收工，也可以再续 5 分钟。兴趣还在的时候停，这一步也算落地。</p><div class="controls"><button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">完成这一步</button><button type="button" class="btn btn-primary" data-action="extend-5">再续 5 分钟</button><button type="button" class="btn btn-ghost" data-action="ask-skip">跳过</button></div></div>`
+      : `<p class="soon" data-soon ${left <= 60 ? "" : "hidden"}>还不到 1 分钟。做完就可以停。</p>
+        <div class="controls">
           <button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">这一步完成</button>
-          <button type="button" class="btn btn-ghost" data-action="ask-skip">跳过</button>
+          ${shrink}
+          <button type="button" class="btn btn-ghost" data-action="toggle-pause">${active.running ? "暂停" : "继续"}</button>
+          <button type="button" class="btn btn-quiet" data-action="ask-skip">跳过</button>
         </div>
         <button type="button" class="btn btn-quiet" data-action="leave-focus">${active.running ? "暂停并离开" : "回到今日"}</button>
         <p class="keys">空格暂停或继续 · Esc 离开</p>`;
@@ -728,7 +772,8 @@
       <p class="kicker">${esc(status)}${goal ? ` · ${esc(goal.title)}` : ""}</p>
       ${ringHtml(active)}
       <h1 class="focus-title">${esc(step ? step.title : "这一步")}</h1>
-      <p>做完就可以停。</p>
+      ${goal && goal.why ? `<p class="focus-why">${esc(goal.why)}</p>` : ""}
+      <p>后面的步骤先不用看。这一步结束就可以停。</p>
       ${sheet}
     </section>`;
   }
@@ -745,7 +790,8 @@
     const heading = notice.type === "step-skip" ? "先跳过这一步" : notice.type === "break-done" ? "休息结束了" : pending === 0 ? "这个大目标的步骤都走完了" : "这一步完成了";
     let detail = "";
     if (notice.type === "step-done") {
-      detail = `<p>「${esc(notice.stepTitle)}」用了 ${esc(formatSpent(notice.elapsedSec))}。</p>`;
+      detail = `<p>「${esc(notice.stepTitle)}」${esc(Logic.describeElapsed(notice.elapsedSec))}</p>`;
+      detail += goal ? segmentsHtml(goal) : "";
       detail += pending > 0 && nextTitle
         ? `<p>「${esc(notice.goalTitle)}」还剩 ${pending} 步。下一步是「${esc(nextTitle)}」，大约 ${nextMinutes} 分钟。</p>`
         : `<p>「${esc(notice.goalTitle)}」的步骤都走完了。你是用很多个短瞬间做完的。</p>`;
@@ -798,6 +844,9 @@
     const progress = active.plannedSec ? (active.plannedSec - left) / active.plannedSec : 0;
     const offset = String(circ * (1 - Math.min(1, Math.max(0, progress))));
     document.querySelectorAll("[data-ring]").forEach((el) => el.setAttribute("stroke-dashoffset", offset));
+    document.querySelectorAll("[data-soon]").forEach((el) => {
+      el.hidden = left > 60;
+    });
   }
 
   function paint() {
@@ -1029,7 +1078,11 @@
       };
       paint();
     } else if (action === "extend-5") extendFive();
-    else if (action === "start-break") startBreak();
+    else if (action === "shrink-2") shrinkTwo();
+    else if (action === "toggle-finished") {
+      app.showFinished = !app.showFinished;
+      paint();
+    } else if (action === "start-break") startBreak();
     else if (action === "end-break") endBreak(false);
     else if (action === "add-step") {
       readDraftFromDom();
