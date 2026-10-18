@@ -494,6 +494,8 @@
     const view = app.view;
     const titles = { home: "今日", progress: "进度", settings: "设置", focus: "专注", editor: "编辑" };
     document.title = `${titles[view] || "碎步"} · 碎步`;
+    const theme = document.querySelector('meta[name="theme-color"]');
+    if (theme) theme.setAttribute("content", view === "focus" ? "#16110d" : "#efe7d8");
     const nav = ["home", "progress", "settings"]
       .map((item) => {
         const label = { home: "今日", progress: "进度", settings: "设置" }[item];
@@ -740,7 +742,7 @@
         : "连续到昨天。今天再完成一步就能接上。";
     const suggested = Logic.suggestedNext(state.goals, state.currentGoalId, state.settings);
     const nextCard = suggested
-      ? `<section class="card" data-testid="next-from-progress" style="margin-top:0.9rem"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p>${Logic.isParked(state.parkedDay, now) ? `<p class="hint" data-testid="parked-note">今天先停在这里。这张卡片留到下次也可以。</p>` : ""}<button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
+      ? `<section class="card" data-testid="next-from-progress"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p>${Logic.isParked(state.parkedDay, now) ? `<p class="hint" data-testid="parked-note">今天先停在这里。这张卡片留到下次也可以。</p>` : ""}<button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
       : "";
     return `<section data-testid="progress-view">
       <div class="intro"><p class="kicker">看见没有放弃</p><h1>进度</h1><p class="lede">完成度只计算真正做完的步骤。跳过会留下来，但不会假装它已经完成。</p></div>
@@ -750,16 +752,16 @@
         <article class="card stat"><p class="kicker">兴趣温度</p><strong>${esc(warmth.label)}</strong>${heatHtml(warmth)}<p class="small muted">${esc(warmth.hint)}</p></article>
       </div>
       ${nextCard}
-      <section class="card" style="margin-top:0.9rem" data-testid="today-done">
+      <section class="card" data-testid="today-done">
         <h2>今天落地的小步</h2>
         ${todayHtml}
       </section>
-      <section class="card" style="margin-top:0.9rem">
+      <section class="card">
         <h2>近 14 天完成的步数</h2>
         <div class="chart" data-testid="chart" role="img" aria-label="近 14 天共完成 ${sum} 步">${bars}</div>
         ${sum === 0 ? `<p class="hint">完成一步之后，今天这根柱子会立起来。</p>` : `<p class="hint">这 14 天一共完成 ${sum} 步。</p>`}
       </section>
-      <div class="layout" style="margin-top:0.9rem">
+      <div class="layout">
         ${lastHtml}
         <section class="card"><h2>每个大目标</h2>${goals}</section>
       </div>
@@ -773,16 +775,16 @@
       <div class="intro"><p class="kicker">让一步保持很短</p><h1>设置</h1><p class="lede">默认时长只影响还没单独设过分钟数的步骤。已经开始的计时不会中途改掉。</p></div>
       <section class="card">
         <p class="choice-label">默认专注时长</p>
-        <div class="choices" style="margin:0.6rem 0 1rem">${focus}</div>
+        <div class="choices">${focus}</div>
         <p class="choice-label">做完一步之后的休息</p>
         <p class="hint">休息结束不会自动开始下一步。你可以回来，也可以今天就停。</p>
-        <div class="choices" style="margin:0.6rem 0 1rem">${breaks}</div>
+        <div class="choices">${breaks}</div>
         <div class="switch">
           <div><p class="choice-label">时间到时响一声</p><p class="hint">很轻的两声。浏览器如果拦截声音，界面上的提示仍然在。</p></div>
           <button type="button" class="btn btn-ghost" data-action="toggle-sound" aria-pressed="${state.settings.sound}">${state.settings.sound ? "开" : "关"}</button>
         </div>
       </section>
-      <section class="card" style="margin-top:0.9rem">
+      <section class="card">
         <h2>本地数据</h2>
         <p>目标、步骤和专注记录都在这台浏览器的 localStorage（suibu.v1）。清除站点数据、换浏览器或无痕窗口，都会看不到它们。</p>
         <button type="button" class="btn btn-danger" data-action="ask-reset">清空并恢复示例</button>
