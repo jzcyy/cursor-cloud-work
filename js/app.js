@@ -379,6 +379,20 @@
     paint();
   }
 
+  function splitStep(goalId, stepId) {
+    const goal = goalById(goalId);
+    const step = findStep(goal, stepId);
+    if (!goal || !step || step.status !== "pending" || goal.steps.length >= 30) return;
+    const opener = Logic.splitOpener(step);
+    if (!opener) return;
+    const index = goal.steps.findIndex((item) => item.id === step.id);
+    if (index < 0) return;
+    goal.steps.splice(index, 0, opener);
+    goal.updatedAt = Date.now();
+    persist();
+    paint();
+  }
+
   function shortenFive(goalId, stepId) {
     const goal = goalById(goalId);
     const step = findStep(goal, stepId);
@@ -520,7 +534,10 @@
     const quick = goal
       ? `<form class="quick" data-action="quick-add">
           <input data-field="quick-title" name="title" maxlength="80" autocomplete="off" placeholder="再加一个很短的步骤，例如：只写开头一句" aria-label="新步骤" />
-          <button class="btn btn-ghost" type="submit">添加</button>
+          <div class="quick-actions">
+            <button class="btn btn-ghost" type="submit" name="mode" value="add">添加</button>
+            <button class="btn btn-primary" type="submit" name="mode" value="start" data-testid="quick-start">添加并开始</button>
+          </div>
         </form>${app.quickError ? `<p class="form-error" data-quick-error role="alert">${esc(app.quickError)}</p>` : ""}`
       : "";
     const others = state.goals.filter((item) => !goal || item.id !== goal.id);
@@ -626,9 +643,13 @@
           const shorten = mins > 5
             ? `<button type="button" class="btn btn-quiet" data-action="shorten-5" data-testid="shorten-5" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">改成 5 分钟</button>`
             : "";
+          const canSplit = goal.steps.length < 30 && (step.title.trim().length >= 16 || mins >= 10);
+          const split = canSplit
+            ? `<button type="button" class="btn btn-quiet" data-action="split-step" data-testid="split-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">拆一个更小的开头</button>`
+            : "";
           side += isActive
-            ? `<a class="btn btn-ghost" href="#/focus">进行中</a>`
-            : `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">开始</button>${shorten}`;
+            ? `<a class="btn btn-ghost" href="#/focus">进行中</a>${split}`
+            : `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">开始</button>${shorten}${split}`;
         } else {
           side = `<span class="muted small">${step.status === "done" ? "已完成" : "已跳过"}${step.completedAt ? ` · ${esc(formatWhen(step.completedAt))}` : ""}</span>`;
         }
@@ -693,6 +714,10 @@
       : streak.aliveToday
         ? "今天已经接上了。"
         : "连续到昨天。今天再完成一步就能接上。";
+    const suggested = Logic.suggestedNext(state.goals, state.currentGoalId, state.settings);
+    const nextCard = suggested
+      ? `<section class="card" data-testid="next-from-progress" style="margin-top:0.9rem"><h2>下一次只要这一步</h2><p><strong>${esc(suggested.step.title)}</strong></p><p class="muted small">${esc(suggested.goal.title)} · ${suggested.mins} 分钟</p><p class="hint">不必把后面的都排进今天。从这一步开始就够了。</p><button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(suggested.goal.id)}" data-step="${esc(suggested.step.id)}" data-testid="start-suggested">开始这 ${suggested.mins} 分钟</button></section>`
+      : "";
     return `<section data-testid="progress-view">
       <div class="intro"><p class="kicker">看见没有放弃</p><h1>进度</h1><p class="lede">完成度只计算真正做完的步骤。跳过会留下来，但不会假装它已经完成。</p></div>
       <div class="stats">
@@ -700,6 +725,7 @@
         <article class="card stat"><p class="kicker">连续天数</p><strong>${streak.days}</strong><p class="small muted">${esc(streakHint)}</p></article>
         <article class="card stat"><p class="kicker">兴趣温度</p><strong>${esc(warmth.label)}</strong>${heatHtml(warmth)}<p class="small muted">${esc(warmth.hint)}</p></article>
       </div>
+      ${nextCard}
       <section class="card" style="margin-top:0.9rem" data-testid="today-done">
         <h2>今天落地的小步</h2>
         ${todayHtml}
@@ -867,16 +893,26 @@
     }
     const other = goal ? otherPendingGoal(goal.id) : otherPendingGoal(null);
     const buttons = [];
-    if (notice.type === "step-done" && state.settings.breakMinutes > 0) {
-      buttons.push(`<button type="button" class="btn btn-ghost" data-action="start-break">休息 ${state.settings.breakMinutes} 分钟</button>`);
+    if (notice.type === "step-done") {
+      buttons.push(`<button type="button" class="btn btn-primary" data-action="dismiss-notice" data-testid="stop-today">今天先停在这里</button>`);
+      if (state.settings.breakMinutes > 0) {
+        buttons.push(`<button type="button" class="btn btn-ghost" data-action="start-break">休息 ${state.settings.breakMinutes} 分钟</button>`);
+      }
+      if (nextId && goal) {
+        buttons.push(`<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(nextId)}">再做下一步</button>`);
+      } else if (other) {
+        buttons.push(`<button type="button" class="btn btn-ghost" data-action="select-goal" data-id="${esc(other.id)}">接着看「${esc(other.title)}」</button>`);
+      }
+      if (pending === 0 && goal) buttons.push(`<a class="btn btn-ghost" href="#/progress">看看进度</a>`);
+    } else {
+      if (nextId && goal) {
+        buttons.push(`<button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(nextId)}">开始下一步</button>`);
+      } else if (other) {
+        buttons.push(`<button type="button" class="btn btn-primary" data-action="select-goal" data-id="${esc(other.id)}">接着看「${esc(other.title)}」</button>`);
+      }
+      if (pending === 0 && goal) buttons.push(`<a class="btn btn-ghost" href="#/progress">看看进度</a>`);
+      buttons.push(`<button type="button" class="btn btn-quiet" data-action="dismiss-notice">回到今日</button>`);
     }
-    if (nextId && goal) {
-      buttons.push(`<button type="button" class="btn btn-primary" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(nextId)}">开始下一步</button>`);
-    } else if (other) {
-      buttons.push(`<button type="button" class="btn btn-primary" data-action="select-goal" data-id="${esc(other.id)}">接着看「${esc(other.title)}」</button>`);
-    }
-    if (pending === 0 && goal) buttons.push(`<a class="btn btn-ghost" href="#/progress">看看进度</a>`);
-    buttons.push(`<button type="button" class="btn btn-quiet" data-action="dismiss-notice">回到今日</button>`);
     return `<section class="focus" data-testid="notice">
       <div class="${mark}" aria-hidden="true"></div>
       <div class="sheet">
@@ -1149,6 +1185,7 @@
     } else if (action === "extend-5") extendFive();
     else if (action === "shrink-2") shrinkTwo();
     else if (action === "shorten-5") shortenFive(button.dataset.goal, button.dataset.step);
+    else if (action === "split-step") splitStep(button.dataset.goal, button.dataset.step);
     else if (action === "drop-timer") dropTimer();
     else if (action === "toggle-finished") {
       app.showFinished = !app.showFinished;
@@ -1260,18 +1297,29 @@
     if (form.matches("[data-action=quick-add]")) {
       event.preventDefault();
       const goal = currentGoal();
-      const title = new FormData(form).get("title");
-      const text = String(title || "").trim();
+      const data = new FormData(form, event.submitter || undefined);
+      const text = String(data.get("title") || "").trim();
+      const mode = event.submitter && event.submitter.name === "mode" ? event.submitter.value : data.get("mode");
       if (!goal) return;
       if (!text) {
         app.quickError = "先写这一小步要做什么。";
         paint();
         return;
       }
-      goal.steps.push({ id: Logic.createId(), title: text.slice(0, 80), minutes: null, status: "pending", completedAt: null });
+      if (goal.steps.length >= 30) {
+        app.quickError = "这个目标已经有 30 步了。先做完或删掉一步再加。";
+        paint();
+        return;
+      }
+      const step = { id: Logic.createId(), title: text.slice(0, 80), minutes: null, status: "pending", completedAt: null };
+      goal.steps.push(step);
       goal.updatedAt = Date.now();
       app.quickError = "";
       persist();
+      if (mode === "start") {
+        requestStart(goal.id, step.id);
+        return;
+      }
       paint();
       return;
     }

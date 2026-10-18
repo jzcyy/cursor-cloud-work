@@ -212,6 +212,52 @@ test("tiny goal is one five-minute step", () => {
   assert.equal(goal.createdAt, 50);
 });
 
+test("splitOpener adds a five-minute start and leaves the original step alone", () => {
+  const step = { id: "keep", title: "把桌上的东西分成「留下」和「先拿走」", minutes: 10, status: "pending" };
+  const opener = Logic.splitOpener(step);
+  assert.match(opener.title, /^只做开头：/);
+  assert.ok(opener.title.length <= 80);
+  assert.equal(opener.minutes, 5);
+  assert.equal(opener.status, "pending");
+  assert.notEqual(opener.id, step.id);
+  assert.equal(step.title, "把桌上的东西分成「留下」和「先拿走」");
+  assert.equal(step.minutes, 10);
+
+  const exact = "一二三四五六七八九十一二三四五六七八";
+  assert.equal(exact.length, 18);
+  assert.equal(Logic.splitOpener({ title: exact }).title, `只做开头：${exact}`);
+  assert.equal(Logic.splitOpener({ title: `${exact}九` }).title, `只做开头：${exact}…`);
+  assert.equal(Logic.splitOpener({ title: "   " }), null);
+  assert.equal(Logic.splitOpener(null), null);
+});
+
+test("suggestedNext stays on the current goal before falling back to the shortest step", () => {
+  const goals = [
+    {
+      id: "g1",
+      steps: [
+        { id: "s1", status: "done", minutes: 5, title: "已经做完" },
+        { id: "s2", status: "pending", minutes: 15, title: "当前目标的下一步" },
+      ],
+    },
+    {
+      id: "g2",
+      steps: [{ id: "s3", status: "pending", minutes: 5, title: "更短的一步" }],
+    },
+  ];
+  const settings = { focusMinutes: 10 };
+  const current = Logic.suggestedNext(goals, "g1", settings);
+  assert.equal(current.goal.id, "g1");
+  assert.equal(current.step.id, "s2");
+  assert.equal(current.mins, 15);
+
+  goals[0].steps[1].status = "done";
+  const fallback = Logic.suggestedNext(goals, "g1", settings);
+  assert.equal(fallback.step.id, "s3");
+  assert.equal(fallback.mins, 5);
+  assert.equal(Logic.suggestedNext([], "missing", settings), null);
+});
+
 test("todayDone keeps finished steps from the local day in order", () => {
   const now = at(2026, 10, 18, 18);
   const items = Logic.todayDone(

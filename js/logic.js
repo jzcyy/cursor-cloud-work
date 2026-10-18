@@ -272,6 +272,29 @@ function todayDone(log, now) {
     };
   }
 
+  function splitOpener(step) {
+    const title = String(step && step.title ? step.title : "").trim();
+    if (!title) return null;
+    const head = title.length <= 18 ? title : `${title.slice(0, 18)}…`;
+    return {
+      id: createId(),
+      title: `只做开头：${head}`.slice(0, 80),
+      minutes: 5,
+      status: "pending",
+      completedAt: null,
+    };
+  }
+
+  function suggestedNext(goals, currentGoalId, settings) {
+    const list = goals || [];
+    const current = list.find((goal) => goal && goal.id === currentGoalId);
+    if (current) {
+      const next = goalStats(current, settings).next;
+      if (next) return { goal: current, step: next, mins: stepMinutes(next, settings) };
+    }
+    return shortestPending(list, settings);
+  }
+
   function catchUpActive(active, now) {
     if (!active || !active.running) return { active, expired: false };
     if (remainingSeconds(active, now) > 0) return { active, expired: false };
@@ -536,6 +559,8 @@ function todayDone(log, now) {
     nextStepLine,
     returnCue,
     tinyGoal,
+    splitOpener,
+    suggestedNext,
     catchUpActive,
     seedState,
     normalizeState,

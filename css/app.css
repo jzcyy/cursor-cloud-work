@@ -186,7 +186,8 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 .done-toggle { margin: 0 0 0.45rem; padding-left: 0; }
 .step-side { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 0.45rem; }
 
-.quick { display: flex; gap: 0.5rem; }
+.quick { display: flex; gap: 0.5rem; align-items: center; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; flex: none; }
 .quick input, .field input, .field textarea, .field select, .step-edit input, .step-edit select {
   width: 100%;
   border: 1px solid var(--line);
@@ -194,6 +195,7 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
   border-radius: 12px;
   padding: 0.7rem 0.75rem;
 }
+.quick > input { flex: 1 1 12rem; width: auto; min-width: 0; }
 .field textarea { min-height: 4.6rem; resize: vertical; }
 .field { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; }
 .field span, .choice-label { font-weight: 650; }
