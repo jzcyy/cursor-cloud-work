@@ -280,6 +280,59 @@ test("stopping for today only lasts the local day", () => {
   assert.equal(Logic.isParked(unpadded.parkedDay, at(2026, 10, 5, 8)), true);
 });
 
+test("suggestSteps breaks a Chinese goal into a handful of short steps", () => {
+  assert.deepEqual(Logic.suggestSteps("   "), []);
+  assert.deepEqual(Logic.suggestSteps(""), []);
+
+  const share = Logic.suggestSteps("准备一个 5 分钟的小分享");
+  assert.ok(share.length >= 3 && share.length <= 8);
+  assert.ok(share.some((step) => step.title.includes("要点") || step.title.includes("记住")));
+  share.forEach((step) => {
+    assert.ok(step.title.length > 0 && step.title.length <= 80);
+    assert.ok(step.minutes === 5 || step.minutes === 10);
+  });
+
+  const paper = Logic.suggestSteps("开始写论文的引言");
+  assert.ok(paper.some((step) => step.title.includes("第一句") || step.title.includes("文档")));
+
+  const tidy = Logic.suggestSteps("把书桌清出来");
+  assert.ok(tidy.some((step) => step.title.includes("留下")));
+
+  const music = Logic.suggestSteps("练会一个吉他和弦切换");
+  assert.ok(music.some((step) => step.title.includes("慢")));
+
+  const quoted = Logic.suggestSteps("把桌上的东西分成「留下」和「先拿走」");
+  assert.ok(quoted.every((step) => !step.title.startsWith("只做这一件：把桌上")));
+
+  const listed = Logic.suggestSteps("写论文大纲、补三篇文献、写第一段");
+  assert.ok(listed.some((step) => step.title.includes("文献")));
+  assert.ok(listed.length >= 3 && listed.length <= 8);
+
+  const original = "准备一个 5 分钟的小分享";
+  Logic.suggestSteps(original);
+  assert.equal(original, "准备一个 5 分钟的小分享");
+});
+
+test("parsePastedSteps reads a short list and keeps only eight", () => {
+  const parsed = Logic.parsePastedSteps("1. 只打开文档｜5分钟\n2. 写一句话（10分钟）\n- 读一遍\n");
+  assert.equal(parsed.truncated, false);
+  assert.deepEqual(
+    parsed.steps.map((step) => [step.title, step.minutes]),
+    [
+      ["只打开文档", 5],
+      ["写一句话", 10],
+      ["读一遍", 5],
+    ]
+  );
+
+  const many = Logic.parsePastedSteps(Array.from({ length: 9 }, (_, i) => `${i + 1}. 第${i + 1}步`).join("\n"));
+  assert.equal(many.truncated, true);
+  assert.equal(many.steps.length, 8);
+  assert.equal(Logic.parsePastedSteps("").steps.length, 0);
+  assert.match(Logic.splitPrompt("写论文"), /写论文/);
+  assert.match(Logic.splitPrompt("写论文"), /5分钟/);
+});
+
 test("todayDone keeps finished steps from the local day in order", () => {
   const now = at(2026, 10, 18, 18);
   const items = Logic.todayDone(

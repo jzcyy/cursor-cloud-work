@@ -1,4 +1,4 @@
-const CACHE = "suibu-static-v5";
+const CACHE = "suibu-static-v6";
 const FILES = ["./index.html", "./css/app.css", "./js/logic.js", "./js/store.js", "./js/app.js"];
 
 self.addEventListener("install", (event) => {

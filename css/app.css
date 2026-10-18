@@ -277,6 +277,8 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 .track span { display: block; height: 100%; background: var(--moss); }
 
 .editor { width: min(760px, 100%); }
+.suggest-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 6.5rem auto; gap: 0.45rem; align-items: center; margin: 0.45rem 0; }
+.suggest textarea[readonly] { min-height: 6.4rem; }
 .step-edit {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -385,7 +387,8 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 }
 @media (max-width: 640px) {
   .top-inner { flex-wrap: wrap; padding: 0.6rem 0; }
-  .quick, .minutes-row, .banner, .goal-head, .today-list li { flex-direction: column; align-items: stretch; }
+  .quick, .minutes-row, .banner, .goal-head, .today-list li, .suggest-row { flex-direction: column; align-items: stretch; }
+  .suggest-row { display: flex; }
   .chart { gap: 3px; }
   .bar span { font-size: 0.62rem; }
 }

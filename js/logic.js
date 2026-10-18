@@ -317,6 +317,228 @@ function todayDone(log, now) {
     return shortestPending(list, settings);
   }
 
+  function echoGoal(title) {
+    const text = String(title || "").replace(/\s+/g, "").replace(/[。！？!?]/g, "");
+    if (!text) return "这件事";
+    return text.length <= 14 ? text : `${text.slice(0, 14)}…`;
+  }
+
+  function shortMinutes(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 5;
+    return n <= 6 ? 5 : 10;
+  }
+
+  function tidyPart(part) {
+    return String(part || "")
+      .replace(/^(把|将|再|然后|并且|并|先)/, "")
+      .trim();
+  }
+
+  function listParts(title) {
+    const compact = String(title || "").replace(/\s+/g, "");
+    const punct = compact
+      .split(/[、，,]/)
+      .map(tidyPart)
+      .filter((part) => part.length >= 4);
+    if (punct.length >= 2) return punct.slice(0, 8);
+    if (/[「」]/.test(compact)) return null;
+    const conj = compact
+      .split(/以及|还有|和|与/)
+      .map(tidyPart)
+      .filter((part) => part.length >= 4);
+    if (conj.length >= 2) return conj.slice(0, 8);
+    return null;
+  }
+
+  function stepsFromParts(parts) {
+    const body = parts.map((part) => {
+      const head = part.length > 24 ? `${part.slice(0, 24)}…` : part;
+      return { title: `只做这一件：${head}`, minutes: head.length > 16 ? 10 : 5 };
+    });
+    const steps = [];
+    if (body.length < 3) steps.push({ title: "先只拿出做第一件要用的东西", minutes: 5 });
+    steps.push(...body);
+    if (steps.length < 8) steps.push({ title: "先停。记下还没做的那一件", minutes: 5 });
+    return steps.slice(0, 8);
+  }
+
+  function domainSteps(title) {
+    const hay = title.toLowerCase();
+    const domains = [
+      { id: "share", weight: 3, words: ["分享", "演讲", "汇报", "幻灯片", "ppt", "报告"] },
+      { id: "paper", weight: 3, words: ["论文", "文章", "作文", "写作", "文稿", "引言"] },
+      { id: "tidy", weight: 3, words: ["整理", "打扫", "清理", "书桌", "桌上", "房间", "衣柜", "收纳"] },
+      { id: "music", weight: 3, words: ["吉他", "钢琴", "小提琴", "乐器", "和弦", "练琴"] },
+      { id: "code", weight: 3, words: ["代码", "编程", "程序", "bug", "调试"] },
+      { id: "mail", weight: 3, words: ["邮件", "回信", "回消息"] },
+      { id: "cook", weight: 3, words: ["做饭", "做菜", "晚饭", "午饭", "早餐"] },
+      { id: "study", weight: 2, words: ["学习", "看书", "阅读", "复习", "课程", "背单词", "考试"] },
+      { id: "exercise", weight: 3, words: ["跑步", "健身", "运动", "拉伸", "瑜伽"] },
+      { id: "draw", weight: 3, words: ["画画", "素描", "绘画"] },
+      { id: "write", weight: 1, words: ["写"] },
+      { id: "practice", weight: 1, words: ["练习", "练"] },
+    ];
+    let best = null;
+    let bestScore = 0;
+    domains.forEach((domain) => {
+      let score = 0;
+      domain.words.forEach((word) => {
+        if (hay.includes(word.toLowerCase())) score += domain.weight;
+      });
+      if (score > bestScore) {
+        best = domain.id;
+        bestScore = score;
+      }
+    });
+    if (!best) return null;
+    const name = echoGoal(title);
+    const templates = {
+      share: [
+        { title: "写下希望对方记住的那一句话", minutes: 5 },
+        { title: "列出三个要点，每个只写一行", minutes: 10 },
+        { title: "给第一个要点配一个自己的例子", minutes: 10 },
+        { title: "先不做完整稿，只写第一页标题", minutes: 5 },
+        { title: "用口语把这几行念出声一遍", minutes: 5 },
+      ],
+      paper: [
+        { title: `只打开「${name}」的文档`, minutes: 5 },
+        { title: "写下这一次只要完成的那一句", minutes: 5 },
+        { title: "列出三个小标题，每个只写一行", minutes: 10 },
+        { title: "只写第一段的第一句，写完就停", minutes: 10 },
+        { title: "读一遍刚才那几行，改一个别扭的词", minutes: 5 },
+        { title: "记下下次从哪一句接着写", minutes: 5 },
+      ],
+      tidy: [
+        { title: "把东西分成「留下」和「先拿走」", minutes: 5 },
+        { title: "只把「先拿走」的一堆移出视线", minutes: 10 },
+        { title: "擦一块马上会用到的表面", minutes: 5 },
+        { title: "给留下的东西找一个固定的位置", minutes: 10 },
+        { title: "看一眼，确认这块已经能开始做事", minutes: 5 },
+      ],
+      music: [
+        { title: "把乐器拿出来，准备到能响一声", minutes: 5 },
+        { title: "只练最慢的一遍，做对就停", minutes: 10 },
+        { title: "用同样的慢速度再来一遍", minutes: 5 },
+        { title: "用正常速度做一次最短的版本", minutes: 10 },
+        { title: "收好，记下下次从哪一个动作开始", minutes: 5 },
+      ],
+      code: [
+        { title: "只把项目打开，确认要改的是哪一处", minutes: 5 },
+        { title: "用一句话写下这次最小的改动", minutes: 5 },
+        { title: "只改这一处，先不顺手重构", minutes: 10 },
+        { title: "跑一次，看这一处有没有坏", minutes: 10 },
+        { title: "记下下次要碰的下一处", minutes: 5 },
+      ],
+      mail: [
+        { title: "只写收件人和这一封的目的", minutes: 5 },
+        { title: "用三行写出要说的事，先不润色", minutes: 10 },
+        { title: "删掉一句可以不说的", minutes: 5 },
+        { title: "读一遍，发出去或存成草稿", minutes: 5 },
+      ],
+      cook: [
+        { title: "只拿出这一餐要用的材料", minutes: 5 },
+        { title: "先做最耗时的那样，做到能放着", minutes: 10 },
+        { title: "把剩下的洗好或切好", minutes: 10 },
+        { title: "完成这一餐能吃的最小版本", minutes: 10 },
+        { title: "把主要工具放进水槽", minutes: 5 },
+      ],
+      study: [
+        { title: "只翻到要看的那一节，做个记号", minutes: 5 },
+        { title: "读两段，用自己的话写下一句", minutes: 10 },
+        { title: "把不懂的地方圈出来，先不查完", minutes: 5 },
+        { title: "只查刚才圈出的第一个问题", minutes: 10 },
+        { title: "合上，用一句话讲给自己听", minutes: 5 },
+      ],
+      exercise: [
+        { title: "换好或站到能开始的位置", minutes: 5 },
+        { title: "只做一轮最轻的版本", minutes: 10 },
+        { title: "休息一会儿，再做一轮同样轻的", minutes: 5 },
+        { title: "做到自己说停的那一下就停", minutes: 10 },
+        { title: "记下下次从哪一个动作开始", minutes: 5 },
+      ],
+      draw: [
+        { title: "只拿出纸和一支笔", minutes: 5 },
+        { title: "先画一个很小的轮廓，不涂完", minutes: 10 },
+        { title: "只加一处你最想看见的细节", minutes: 10 },
+        { title: "离远看一眼，改一条线", minutes: 5 },
+        { title: "收起笔，记下下次从哪一笔开始", minutes: 5 },
+      ],
+      write: [
+        { title: `只打开「${name}」要写的那一页`, minutes: 5 },
+        { title: "先写一句能当开头的话", minutes: 5 },
+        { title: "顺着这句再写四行，写完就停", minutes: 10 },
+        { title: "读一遍，删掉一句多余的", minutes: 5 },
+      ],
+      practice: [
+        { title: `只准备「${name}」要用的那样东西`, minutes: 5 },
+        { title: "用最慢的速度做一遍", minutes: 10 },
+        { title: "再慢速重复一遍", minutes: 5 },
+        { title: "用正常速度做一次最短的版本", minutes: 10 },
+        { title: "记下下次从哪一下开始", minutes: 5 },
+      ],
+    };
+    return templates[best];
+  }
+
+  function genericSteps(title) {
+    const name = echoGoal(title);
+    return [
+      { title: `只找出和「${name}」有关的那一份材料`, minutes: 5 },
+      { title: `用一句话写下「${name}」怎样算做完`, minutes: 5 },
+      { title: `只做「${name}」的开头，做完就停`, minutes: 10 },
+      { title: "把刚才的开头再往前推进一小段", minutes: 10 },
+      { title: "收起来，记下下次从哪一句开始", minutes: 5 },
+    ];
+  }
+
+  function suggestSteps(text) {
+    const title = String(text || "").trim();
+    if (!title) return [];
+    const parts = listParts(title);
+    const steps = parts ? stepsFromParts(parts) : domainSteps(title) || genericSteps(title);
+    return steps
+      .slice(0, 8)
+      .map((step) => ({
+        title: String(step.title || "").trim().slice(0, 80),
+        minutes: shortMinutes(step.minutes),
+      }))
+      .filter((step) => step.title);
+  }
+
+  function cleanPasteLine(line) {
+    return String(line || "")
+      .trim()
+      .replace(/^[-*•·]\s*/, "")
+      .replace(/^\d{1,2}\s*[.、)）]\s*/, "")
+      .replace(/\*\*/g, "")
+      .trim();
+  }
+
+  function parsePastedSteps(text) {
+    const raw = String(text || "").replace(/\r/g, "").trim();
+    if (!raw) return { steps: [], truncated: false };
+    let lines = raw.split("\n").map(cleanPasteLine).filter(Boolean);
+    if (lines.length <= 1 && raw.includes("；")) lines = raw.split("；").map(cleanPasteLine).filter(Boolean);
+    const truncated = lines.length > 8;
+    const steps = lines.slice(0, 8).map((line) => {
+      const marked = line.match(/(\d{1,3})\s*(?:分钟|min)/i) || line.match(/[|｜]\s*(\d{1,3})\s*$/);
+      const title = line
+        .replace(/[|｜]\s*\d{1,3}\s*(?:分钟|min)?\s*$/i, "")
+        .replace(/[（(]\s*\d{1,3}\s*(?:分钟|min)\s*[)）]/gi, "")
+        .replace(/(\d{1,3})\s*(?:分钟|min)\s*$/i, "")
+        .trim()
+        .slice(0, 80);
+      return { title, minutes: shortMinutes(marked && marked[1]) };
+    }).filter((step) => step.title);
+    return { steps, truncated };
+  }
+
+  function splitPrompt(title) {
+    const name = String(title || "").trim().slice(0, 60) || "（在这里写大目标）";
+    return `请把下面的大目标拆成 4 到 6 个很短的步骤。每一步只要 5 或 10 分钟，写成一句马上能做的动作。不要解释，不要加总时长。\n大目标：${name}\n每行一条，格式：步骤内容｜5分钟`;
+  }
+
   function catchUpActive(active, now) {
     if (!active || !active.running) return { active, expired: false };
     if (remainingSeconds(active, now) > 0) return { active, expired: false };
@@ -587,6 +809,9 @@ function todayDone(log, now) {
     tinyGoal,
     splitOpener,
     suggestedNext,
+    suggestSteps,
+    parsePastedSteps,
+    splitPrompt,
     catchUpActive,
     seedState,
     normalizeState,

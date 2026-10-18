@@ -34,6 +34,8 @@
     showFinished: false,
     armDrop: false,
     tinyError: "",
+    suggest: null,
+    focusSuggest: false,
   };
 
   let state = Store.load();
@@ -568,7 +570,7 @@
       <div class="layout">
         <div class="stack" data-testid="today-view">
           ${hero}
-          ${goal ? `<section class="card"><div class="goal-head"><div><h2>步骤</h2>${segmentsHtml(goal)}</div><button type="button" class="btn btn-quiet" data-action="open-edit" data-id="${esc(goal.id)}">编辑目标</button></div>${steps}</section>${quick}` : ""}
+          ${goal ? `<section class="card"><div class="goal-head"><div><h2>步骤</h2>${segmentsHtml(goal)}</div><button type="button" class="btn btn-quiet" data-action="open-edit" data-id="${esc(goal.id)}">编辑目标</button></div>${app.suggest && app.suggest.where === "home" && app.suggest.goalId === goal.id ? renderSuggest() : ""}${steps}</section>${quick}` : ""}
         </div>
         <aside class="stack">
           ${interest}
@@ -666,9 +668,12 @@
           const split = canSplit
             ? `<button type="button" class="btn btn-quiet" data-action="split-step" data-testid="split-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">拆一个更小的开头</button>`
             : "";
+          const ai = canSplit
+            ? `<button type="button" class="btn btn-quiet" data-action="open-suggest" data-testid="ai-split-step" data-where="home" data-step="${esc(step.id)}">AI 帮我拆分</button>`
+            : "";
           side += isActive
-            ? `<a class="btn btn-ghost" href="#/focus">进行中</a>${split}`
-            : `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">开始</button>${shorten}${split}`;
+            ? `<a class="btn btn-ghost" href="#/focus">进行中</a>${split}${ai}`
+            : `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">开始</button>${shorten}${split}${ai}`;
         } else {
           side = `<span class="muted small">${step.status === "done" ? "已完成" : "已跳过"}${step.completedAt ? ` · ${esc(formatWhen(step.completedAt))}` : ""}</span>`;
         }
@@ -785,6 +790,243 @@
     </section>`;
   }
 
+  function cleanedSuggest(items) {
+    return (items || [])
+      .map((item) => ({
+        title: String(item.title || "").trim().slice(0, 80),
+        minutes: Number(item.minutes) === 10 ? 10 : 5,
+      }))
+      .filter((item) => item.title)
+      .slice(0, 8);
+  }
+
+  function readSuggestFromDom() {
+    const suggest = app.suggest;
+    if (!suggest) return;
+    suggest.items.forEach((item) => {
+      const input = document.querySelector(`[data-field=suggest-title][data-id="${cssEscape(item.id)}"]`);
+      const select = document.querySelector(`[data-field=suggest-minutes][data-id="${cssEscape(item.id)}"]`);
+      if (input) item.title = input.value;
+      if (select) item.minutes = Number(select.value) === 10 ? 10 : 5;
+    });
+    const paste = document.querySelector("[data-field=suggest-paste]");
+    if (paste) suggest.paste = paste.value;
+    const drop = document.querySelector("[data-field=drop-original]");
+    if (drop) suggest.dropOriginal = drop.checked;
+  }
+
+  function suggestSource(where, stepId) {
+    if (where === "editor") {
+      if (!app.draft) return "";
+      if (stepId) {
+        const step = app.draft.steps.find((item) => item.id === stepId);
+        return step ? step.title.trim() : "";
+      }
+      return app.draft.title.trim();
+    }
+    const goal = currentGoal();
+    const step = goal && findStep(goal, stepId);
+    return step ? step.title.trim() : "";
+  }
+
+  function openSuggest(where, stepId) {
+    if (where === "editor") readDraftFromDom();
+    const source = suggestSource(where, stepId);
+    if (!source) {
+      if (where === "editor" && !stepId) app.formError = "先写下大目标，再让它帮你拆。";
+      else if (where === "editor") app.formError = "先写下这一步要做什么。";
+      paint();
+      return;
+    }
+    const items = Logic.suggestSteps(source).map((step) => ({ id: Logic.createId(), title: step.title, minutes: step.minutes }));
+    app.suggest = {
+      where,
+      goalId: where === "home" ? (currentGoal() ? currentGoal().id : null) : app.draft ? app.draft.goalId : null,
+      stepId: stepId || null,
+      source,
+      items,
+      paste: "",
+      message: items.length
+        ? where === "editor"
+          ? "先改一改。放进列表之后，还要点保存才会记住。"
+          : "先改一改。点「用这些步骤」才会写进这个目标。"
+        : "没有拆出步骤。换一种说法试试。",
+      dropOriginal: false,
+    };
+    if (where === "editor") app.formError = "";
+    app.focusSuggest = items.length > 0;
+    paint();
+  }
+
+  function renderSuggest() {
+    const suggest = app.suggest;
+    if (!suggest) return "";
+    const rows = suggest.items
+      .map((item, index) => `<div class="suggest-row">
+          <span class="muted small">${index + 1}</span>
+          <input data-field="suggest-title" data-id="${esc(item.id)}" maxlength="80" value="${esc(item.title)}" aria-label="建议的第 ${index + 1} 步" />
+          <select data-field="suggest-minutes" data-id="${esc(item.id)}" aria-label="建议的第 ${index + 1} 步时长">
+            <option value="5" ${Number(item.minutes) === 10 ? "" : "selected"}>5 分钟</option>
+            <option value="10" ${Number(item.minutes) === 10 ? "selected" : ""}>10 分钟</option>
+          </select>
+          <button type="button" class="btn btn-quiet" data-action="drop-suggest" data-id="${esc(item.id)}" ${suggest.items.length <= 1 ? "disabled" : ""}>去掉</button>
+        </div>`)
+      .join("");
+    const dropBox = suggest.stepId
+      ? `<label class="hint"><input type="checkbox" data-field="drop-original" ${suggest.dropOriginal ? "checked" : ""} /> 拆开后去掉原来的这一步</label>`
+      : "";
+    let accept = `<button type="button" class="btn btn-primary" data-action="accept-suggest" data-testid="accept-suggest">用这些步骤</button>`;
+    if (suggest.where === "editor" && !suggest.stepId && app.draft && app.draft.steps.some((step) => step.title.trim())) {
+      accept = `<button type="button" class="btn btn-primary" data-action="accept-suggest" data-mode="append" data-testid="accept-suggest">加在后面</button><button type="button" class="btn btn-ghost" data-action="accept-suggest" data-mode="replace">替换未完成的步骤</button>`;
+    }
+    return `<section class="card suggest" data-testid="split-suggest">
+      <h2>拆成很短的几步</h2>
+      <p class="hint">这一步在这台浏览器里完成，不联网，也不用钥匙。它按常见的中文目标来拆。想用真正的对话模型，把提示词带走，再把结果贴回来。收下之前都可以改、可以删。</p>
+      <label class="field"><span>给别的 AI 的提示词</span><textarea readonly data-testid="split-prompt">${esc(Logic.splitPrompt(suggest.source))}</textarea></label>
+      <button type="button" class="btn btn-quiet" data-action="copy-prompt">复制提示词</button>
+      <div class="suggest-list">${rows}</div>
+      ${dropBox}
+      <label class="field" style="margin-top:0.8rem"><span>贴上别处生成的步骤</span><textarea data-field="suggest-paste" maxlength="2000" placeholder="一行一步。例如：只打开文档｜5分钟">${esc(suggest.paste)}</textarea></label>
+      <button type="button" class="btn btn-ghost" data-action="apply-paste" data-testid="apply-paste">解析贴进来的步骤</button>
+      ${suggest.message ? `<p class="hint" data-testid="suggest-message">${esc(suggest.message)}</p>` : ""}
+      <div class="actions" style="margin-top:0.8rem">${accept}<button type="button" class="btn btn-quiet" data-action="dismiss-suggest" data-testid="dismiss-suggest">先不用</button></div>
+    </section>`;
+  }
+
+  function pendingStepsFromSuggest(items) {
+    return cleanedSuggest(items).map((item) => ({
+      id: Logic.createId(),
+      title: item.title,
+      minutes: item.minutes,
+      status: "pending",
+      completedAt: null,
+    }));
+  }
+
+  function acceptSuggest(mode) {
+    if (!app.suggest) return;
+    if (app.suggest.where === "editor") readDraftFromDom();
+    readSuggestFromDom();
+    const made = pendingStepsFromSuggest(app.suggest.items);
+    if (!made.length) {
+      app.suggest.message = "留下至少一步再使用。";
+      paint();
+      return;
+    }
+    if (app.suggest.where === "editor") acceptEditorSuggest(made, mode);
+    else acceptHomeSuggest(made);
+  }
+
+  function acceptEditorSuggest(made, mode) {
+    const draft = app.draft;
+    if (!draft) return;
+    const stepId = app.suggest.stepId;
+    if (stepId) {
+      const index = draft.steps.findIndex((step) => step.id === stepId);
+      const drop = app.suggest.dropOriginal && index >= 0 && draft.steps[index].status === "pending";
+      const room = 30 - draft.steps.length + (drop ? 1 : 0);
+      if (room <= 0) {
+        app.suggest.message = "已经有 30 步了。先删掉一步再加。";
+        paint();
+        return;
+      }
+      const taken = made.slice(0, room);
+      if (index < 0) draft.steps.push(...taken);
+      else if (drop) draft.steps.splice(index, 1, ...taken);
+      else draft.steps.splice(index + 1, 0, ...taken);
+      if (taken.length < made.length) app.formError = "最多 30 步，多出来的没有加进去。";
+    } else if (mode === "replace") {
+      const kept = draft.steps.filter((step) => step.status === "done" || step.status === "skipped");
+      const room = 30 - kept.length;
+      if (room <= 0) {
+        app.suggest.message = "已完成的步骤已经占满 30 步。";
+        paint();
+        return;
+      }
+      const taken = made.slice(0, room);
+      draft.steps = kept.concat(taken);
+      if (taken.length < made.length) app.formError = "最多 30 步，多出来的没有加进去。";
+    } else if (draft.steps.every((step) => !step.title.trim())) {
+      draft.steps = made.slice(0, 30);
+    } else {
+      const room = 30 - draft.steps.length;
+      if (room <= 0) {
+        app.suggest.message = "已经有 30 步了。先删掉一步再加。";
+        paint();
+        return;
+      }
+      const taken = made.slice(0, room);
+      draft.steps.push(...taken);
+      if (taken.length < made.length) app.formError = "最多 30 步，多出来的没有加进去。";
+    }
+    app.suggest = null;
+    paint();
+  }
+
+  function acceptHomeSuggest(made) {
+    const goal = goalById(app.suggest.goalId) || currentGoal();
+    if (!goal) return;
+    const index = app.suggest.stepId ? goal.steps.findIndex((step) => step.id === app.suggest.stepId) : -1;
+    const drop = Boolean(app.suggest.dropOriginal && index >= 0 && goal.steps[index].status === "pending");
+    const room = 30 - goal.steps.length + (drop ? 1 : 0);
+    if (room <= 0) {
+      app.suggest.message = "已经有 30 步了。先删掉一步再加。";
+      paint();
+      return;
+    }
+    const taken = made.slice(0, room);
+    if (index < 0) goal.steps.push(...taken);
+    else if (drop) {
+      const removed = goal.steps[index];
+      goal.steps.splice(index, 1, ...taken);
+      if (state.active && state.active.goalId === goal.id && state.active.stepId === removed.id) state.active = null;
+    } else goal.steps.splice(index + 1, 0, ...taken);
+    goal.updatedAt = Date.now();
+    app.suggest = null;
+    persist();
+    paint();
+  }
+
+  function applyPaste() {
+    if (!app.suggest) return;
+    readSuggestFromDom();
+    const parsed = Logic.parsePastedSteps(app.suggest.paste);
+    if (!parsed.steps.length) {
+      app.suggest.message = "没有认出步骤。一行写一步，例如：只打开文档｜5分钟";
+      paint();
+      return;
+    }
+    app.suggest.items = parsed.steps.map((step) => ({ id: Logic.createId(), title: step.title, minutes: step.minutes }));
+    app.suggest.message = parsed.truncated ? "只收下前 8 步。再多就会又变成长任务。" : "已经换成贴进来的步骤。还可以改，再决定用不用。";
+    app.focusSuggest = true;
+    paint();
+  }
+
+  function dropSuggest(id) {
+    if (!app.suggest) return;
+    readSuggestFromDom();
+    if (app.suggest.items.length <= 1) return;
+    app.suggest.items = app.suggest.items.filter((item) => item.id !== id);
+    paint();
+  }
+
+  function copyPrompt() {
+    if (!app.suggest) return;
+    const text = Logic.splitPrompt(app.suggest.source);
+    const done = (message) => {
+      app.suggest.message = message;
+      paint();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => done("提示词已复制。贴到你常用的 AI 后，把结果再贴回来。"),
+        () => done("浏览器没有允许复制。提示词在上面的框里，选中即可。")
+      );
+      return;
+    }
+    done("提示词在上面的框里，选中即可。");
+  }
+
   function renderEditor() {
     const draft = app.draft;
     if (!draft) return `<p>没有正在编辑的目标。</p>`;
@@ -804,7 +1046,7 @@
           </span></div>
           <input data-field="step-title" data-id="${esc(step.id)}" maxlength="80" value="${esc(step.title)}" placeholder="${esc(["例如：只打开文档，写下一句话", "例如：把要处理的东西分成两堆", "例如：做一个 5 分钟就能停的最小版本"][index % 3])}" aria-label="第 ${index + 1} 步" />
           <p class="hint warn" data-len-hint ${step.title.trim().length > 36 ? "" : "hidden"}>标题有点长。越像一句动作，越容易开始。</p>
-          <div class="minutes-row"><select data-field="step-minutes" data-id="${esc(step.id)}" aria-label="第 ${index + 1} 步时长">${options}</select>${step.status !== "pending" ? `<button type="button" class="btn btn-ghost" data-action="revert-step" data-id="${esc(step.id)}">恢复为未完成</button>` : ""}</div>
+          <div class="minutes-row"><select data-field="step-minutes" data-id="${esc(step.id)}" aria-label="第 ${index + 1} 步时长">${options}</select>${step.status !== "pending" ? `<button type="button" class="btn btn-ghost" data-action="revert-step" data-id="${esc(step.id)}">恢复为未完成</button>` : ""}${step.status === "pending" && (step.title.trim().length >= 16 || (step.minutes == null ? state.settings.focusMinutes : Number(step.minutes)) >= 10) ? `<button type="button" class="btn btn-quiet" data-action="open-suggest" data-testid="ai-split-step" data-where="editor" data-step="${esc(step.id)}">AI 帮我拆分</button>` : ""}</div>
           <p class="hint warn" data-long-hint ${longHidden ? "hidden" : ""}>25 分钟对容易失去兴趣的人有点长。能再拆开的话，完成率会更高。</p>
         </div>`;
       })
@@ -816,8 +1058,9 @@
       <section class="card">
         <label class="field"><span>大目标</span><input data-field="goal-title" maxlength="60" value="${esc(draft.title)}" placeholder="例如：准备下周的小分享" /></label>
         <label class="field"><span>为什么想做（可选）</span><textarea data-field="goal-why" maxlength="120" placeholder="一句话就好。写给失去兴趣时的自己。">${esc(draft.why)}</textarea></label>
-        <h2>很短的步骤</h2>
+        <div class="goal-head"><h2>很短的步骤</h2><button type="button" class="btn btn-ghost" data-action="open-suggest" data-testid="ai-split" data-where="editor">AI 帮我拆分</button></div>
         <p class="hint">一步最好短到 5–15 分钟。短到你还没失去兴趣，它就已经做完。</p>
+        ${app.suggest && app.suggest.where === "editor" ? renderSuggest() : ""}
         ${steps}
         <button type="button" class="btn btn-ghost" data-action="add-step" ${draft.steps.length >= 30 ? "disabled" : ""}>添加一步</button>
         ${draft.steps.length > 8 ? `<p class="hint warn">步骤一多，又会变成大任务。能合并，或另开一个目标吗？</p>` : ""}
@@ -1002,6 +1245,10 @@
       app.focusStepId = null;
       document.querySelector(`[data-field=step-title][data-id="${cssEscape(id)}"]`)?.focus();
     }
+    if (app.focusSuggest) {
+      app.focusSuggest = false;
+      document.querySelector("[data-field=suggest-title]")?.focus();
+    }
     const dialogBtn = document.querySelector(".dialog [data-action=dialog-confirm]");
     if (dialogBtn && !document.querySelector(".dialog")?.contains(document.activeElement)) dialogBtn.focus();
   }
@@ -1020,6 +1267,9 @@
       app.draft = null;
       app.formError = "";
       app.timerBanner = "";
+    }
+    if (app.suggest && ((view !== "editor" && app.suggest.where === "editor") || (view !== "home" && app.suggest.where === "home"))) {
+      app.suggest = null;
     }
     app.view = view;
     const desired = hashFor(view);
@@ -1045,6 +1295,7 @@
   function openEditor(goalId) {
     app.formError = "";
     app.timerBanner = "";
+    app.suggest = null;
     if (goalId) {
       const goal = goalById(goalId);
       if (!goal) return;
@@ -1192,6 +1443,7 @@
     else if (action === "select-goal") {
       state.currentGoalId = button.dataset.id;
       state.notice = null;
+      app.suggest = null;
       persist();
       go("home");
     } else if (action === "start-step") requestStart(button.dataset.goal, button.dataset.step);
@@ -1274,7 +1526,15 @@
       if (state.settings.sound) ensureAudio();
       persist();
       paint();
-    } else if (action === "ask-reset") {
+    } else if (action === "open-suggest") openSuggest(button.dataset.where === "home" ? "home" : "editor", button.dataset.step || null);
+    else if (action === "dismiss-suggest") {
+      app.suggest = null;
+      paint();
+    } else if (action === "drop-suggest") dropSuggest(button.dataset.id);
+    else if (action === "accept-suggest") acceptSuggest(button.dataset.mode || "append");
+    else if (action === "apply-paste") applyPaste();
+    else if (action === "copy-prompt") copyPrompt();
+    else if (action === "ask-reset") {
       app.dialog = {
         kind: "reset",
         title: "清空并恢复示例？",
@@ -1296,6 +1556,11 @@
       app.tinyError = "";
       document.querySelector("[data-tiny-error]")?.remove();
     }
+    if (app.suggest && target.matches("[data-field=suggest-title]")) {
+      const item = app.suggest.items.find((row) => row.id === target.dataset.id);
+      if (item) item.title = target.value;
+    }
+    if (app.suggest && target.matches("[data-field=suggest-paste]")) app.suggest.paste = target.value;
     if (!app.draft) return;
     if (target.dataset.field === "goal-title") app.draft.title = target.value;
     if (target.dataset.field === "goal-why") app.draft.why = target.value;
@@ -1309,6 +1574,15 @@
 
   function onChange(event) {
     const target = event.target;
+    if (app.suggest && target.matches("[data-field=suggest-minutes]")) {
+      const item = app.suggest.items.find((row) => row.id === target.dataset.id);
+      if (item) item.minutes = Number(target.value) === 10 ? 10 : 5;
+      return;
+    }
+    if (app.suggest && target.matches("[data-field=drop-original]")) {
+      app.suggest.dropOriginal = target.checked;
+      return;
+    }
     if (!app.draft || target.dataset.field !== "step-minutes") return;
     const step = app.draft.steps.find((item) => item.id === target.dataset.id);
     if (step) step.minutes = target.value === "" ? null : Number(target.value);
