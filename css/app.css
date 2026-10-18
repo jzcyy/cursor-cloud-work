@@ -184,7 +184,7 @@ h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
 .mark-next { border-color: var(--ember); }
 .step-title { margin: 0; font-weight: 650; }
 .done-toggle { margin: 0 0 0.45rem; padding-left: 0; }
-.step-side { display: flex; align-items: center; gap: 0.45rem; }
+.step-side { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 0.45rem; }
 
 .quick { display: flex; gap: 0.5rem; }
 .quick input, .field input, .field textarea, .field select, .step-edit input, .step-edit select {

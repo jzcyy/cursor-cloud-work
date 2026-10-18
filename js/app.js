@@ -32,6 +32,8 @@
     focusStepId: null,
     storageError: "",
     showFinished: false,
+    armDrop: false,
+    tinyError: "",
   };
 
   let state = Store.load();
@@ -362,6 +364,12 @@
     paint();
   }
 
+  function dropTimerButton() {
+    const active = state.active;
+    if (!active || active.phase !== "focus" || active.running || active.timeUp) return "";
+    return `<button type="button" class="btn btn-quiet" data-action="drop-timer" data-testid="drop-timer">${app.armDrop ? "确认放掉" : "放掉这次计时"}</button>`;
+  }
+
   function shrinkTwo() {
     if (!state.active || state.active.phase !== "focus" || state.active.timeUp) return;
     const next = Logic.shrinkActive(state.active, 2 * 60, Date.now());
@@ -369,6 +377,48 @@
     state.active = next;
     persist();
     paint();
+  }
+
+  function shortenFive(goalId, stepId) {
+    const goal = goalById(goalId);
+    const step = findStep(goal, stepId);
+    if (!goal || !step || step.status !== "pending") return;
+    if (Logic.stepMinutes(step, state.settings) <= 5) return;
+    step.minutes = 5;
+    goal.updatedAt = Date.now();
+    const active = state.active;
+    if (active && active.phase === "focus" && active.goalId === goalId && active.stepId === stepId && !active.timeUp) {
+      state.active = Logic.shrinkActive(active, 5 * 60, Date.now());
+    }
+    persist();
+    paint();
+  }
+
+  function dropTimer() {
+    if (!state.active) return;
+    if (!app.armDrop) {
+      app.armDrop = true;
+      paint();
+      return;
+    }
+    app.armDrop = false;
+    state.active = null;
+    persist();
+    go("home");
+  }
+
+  function startTiny(title) {
+    const goal = Logic.tinyGoal(title, Date.now());
+    if (!goal) {
+      app.tinyError = "先写这一件小事。";
+      paint();
+      return;
+    }
+    state.goals.unshift(goal);
+    state.seeded = true;
+    app.tinyError = "";
+    persist();
+    requestStart(goal.id, goal.steps[0].id);
   }
 
   function togglePause() {
@@ -498,7 +548,16 @@
         <aside class="stack">
           ${interest}
           ${sideGoals}
-          <button type="button" class="btn btn-primary" data-action="open-new" data-testid="new-goal">新建大目标</button>
+          <section class="card" data-testid="tiny-card">
+            <h2>只有一点点兴趣</h2>
+            <p class="hint">不必先写完整的大目标。记一件 5 分钟的小事，马上开始。</p>
+            <form class="quick" data-action="tiny-start">
+              <input name="title" maxlength="60" autocomplete="off" placeholder="例如：只把杯子洗了" aria-label="一件小事" data-field="tiny-title" />
+              <button class="btn btn-ghost" type="submit">记下来并开始</button>
+            </form>
+            ${app.tinyError ? `<p class="form-error" data-tiny-error role="alert">${esc(app.tinyError)}</p>` : ""}
+          </section>
+          <button type="button" class="btn btn-ghost" data-action="open-new" data-testid="new-goal">新建大目标</button>
         </aside>
       </div>
       <p class="footer">数据只在这台浏览器里，键名 suibu.v1。没有账号。</p>`;
@@ -520,8 +579,8 @@
       const status = active.timeUp ? "时间到了" : active.running ? "专注进行中" : "专注已暂停";
       const button = active.timeUp
         ? `<a class="btn btn-moss" href="#/focus">去收工</a>`
-        : `<a class="btn btn-primary" href="#/focus">回到专注</a>`;
-      return `<section class="card hero" data-testid="active-hero"><p class="kicker">${esc(status)} · ${esc(activeGoal ? activeGoal.title : "")}</p><h1>${esc(title)}</h1><p class="meta"><span data-clock>${formatClock(left)}</span> · 计划 ${mins} 分钟</p>${button}</section>`;
+        : `<a class="btn btn-primary" href="#/focus">回到专注</a>${dropTimerButton()}`;
+      return `<section class="card hero" data-testid="active-hero"><p class="kicker">${esc(status)} · ${esc(activeGoal ? activeGoal.title : "")}</p><h1>${esc(title)}</h1><p class="meta"><span data-clock>${formatClock(left)}</span> · 计划 ${mins} 分钟</p><div class="actions">${button}</div></section>`;
     }
     const stats = Logic.goalStats(goal, state.settings);
     if (!stats.next) {
@@ -535,7 +594,8 @@
       ? `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(short.goal.id)}" data-step="${esc(short.step.id)}">改做更短的 · ${short.mins} 分钟</button>`
       : "";
     const shorterHint = shorter ? `<p class="hint">更短的一步是「${esc(short.step.title)}」。</p>` : "";
-    return `<section class="card hero"><p class="kicker">当前一步 · ${esc(goal.title)}</p><h1 data-testid="step-title">${esc(stats.next.title)}</h1><p class="meta">约 ${mins} 分钟 · 第 ${index} 步，共 ${stats.total} 步</p>${segmentsHtml(goal)}<p class="reassure">还剩 ${stats.pending} 步，加起来约 ${stats.remainingMin} 分钟。现在只做这 ${mins} 分钟。</p><div class="actions"><button type="button" class="btn btn-primary" data-testid="start-focus" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(stats.next.id)}">开始这 ${mins} 分钟</button>${shorter}</div>${shorterHint}</section>`;
+    const cue = Logic.returnCue(Logic.warmth(state.log, Date.now()).label);
+    return `<section class="card hero"><p class="kicker">当前一步 · ${esc(goal.title)}</p><h1 data-testid="step-title">${esc(stats.next.title)}</h1>${cue ? `<p class="hint" data-testid="return-cue">${esc(cue)}</p>` : ""}<p class="meta">约 ${mins} 分钟 · 第 ${index} 步，共 ${stats.total} 步</p>${segmentsHtml(goal)}<p class="reassure" data-testid="next-line">${esc(Logic.nextStepLine(stats.pending, mins))}</p><div class="actions"><button type="button" class="btn btn-primary" data-testid="start-focus" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(stats.next.id)}">开始这 ${mins} 分钟</button>${shorter}</div>${shorterHint}</section>`;
   }
 
   function finishedLabel(goal) {
@@ -563,9 +623,12 @@
         const markText = step.status === "done" ? "✓" : step.status === "skipped" ? "–" : "";
         let side = `<span class="muted small">${mins} 分钟</span>`;
         if (step.status === "pending") {
+          const shorten = mins > 5
+            ? `<button type="button" class="btn btn-quiet" data-action="shorten-5" data-testid="shorten-5" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">改成 5 分钟</button>`
+            : "";
           side += isActive
             ? `<a class="btn btn-ghost" href="#/focus">进行中</a>`
-            : `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">开始</button>`;
+            : `<button type="button" class="btn btn-ghost" data-action="start-step" data-goal="${esc(goal.id)}" data-step="${esc(step.id)}">开始</button>${shorten}`;
         } else {
           side = `<span class="muted small">${step.status === "done" ? "已完成" : "已跳过"}${step.completedAt ? ` · ${esc(formatWhen(step.completedAt))}` : ""}</span>`;
         }
@@ -760,10 +823,12 @@
     const sheet = active.timeUp
       ? `<div class="sheet"><h2>这一小段时间到了</h2><p>可以收工，也可以再续 5 分钟。兴趣还在的时候停，这一步也算落地。</p><div class="controls"><button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">完成这一步</button><button type="button" class="btn btn-primary" data-action="extend-5">再续 5 分钟</button><button type="button" class="btn btn-ghost" data-action="ask-skip">跳过</button></div></div>`
       : `<p class="soon" data-soon ${left <= 60 ? "" : "hidden"}>还不到 1 分钟。做完就可以停。</p>
+        <p class="soon" data-half hidden>已经过了一半。停在这里也算做了。</p>
         <div class="controls">
           <button type="button" class="btn btn-moss" data-action="complete-step" data-testid="complete-step">这一步完成</button>
           ${shrink}
           <button type="button" class="btn btn-ghost" data-action="toggle-pause">${active.running ? "暂停" : "继续"}</button>
+          ${dropTimerButton()}
           <button type="button" class="btn btn-quiet" data-action="ask-skip">跳过</button>
         </div>
         <button type="button" class="btn btn-quiet" data-action="leave-focus">${active.running ? "暂停并离开" : "回到今日"}</button>
@@ -846,6 +911,9 @@
     document.querySelectorAll("[data-ring]").forEach((el) => el.setAttribute("stroke-dashoffset", offset));
     document.querySelectorAll("[data-soon]").forEach((el) => {
       el.hidden = left > 60;
+    });
+    document.querySelectorAll("[data-half]").forEach((el) => {
+      el.hidden = progress < 0.5 || left <= 60;
     });
   }
 
@@ -1045,6 +1113,7 @@
     const button = event.target.closest("[data-action]");
     if (!button) return;
     const action = button.dataset.action;
+    if (action !== "drop-timer") app.armDrop = false;
     if (action === "dialog-cancel") {
       event.preventDefault();
       app.dialog = null;
@@ -1079,6 +1148,8 @@
       paint();
     } else if (action === "extend-5") extendFive();
     else if (action === "shrink-2") shrinkTwo();
+    else if (action === "shorten-5") shortenFive(button.dataset.goal, button.dataset.step);
+    else if (action === "drop-timer") dropTimer();
     else if (action === "toggle-finished") {
       app.showFinished = !app.showFinished;
       paint();
@@ -1157,6 +1228,10 @@
       app.quickError = "";
       document.querySelector("[data-quick-error]")?.remove();
     }
+    if (target.matches("[data-field=tiny-title]") && app.tinyError) {
+      app.tinyError = "";
+      document.querySelector("[data-tiny-error]")?.remove();
+    }
     if (!app.draft) return;
     if (target.dataset.field === "goal-title") app.draft.title = target.value;
     if (target.dataset.field === "goal-why") app.draft.why = target.value;
@@ -1203,6 +1278,11 @@
     if (form.matches("[data-action=save-goal]")) {
       event.preventDefault();
       saveGoal();
+      return;
+    }
+    if (form.matches("[data-action=tiny-start]")) {
+      event.preventDefault();
+      startTiny(new FormData(form).get("title"));
     }
   }
 

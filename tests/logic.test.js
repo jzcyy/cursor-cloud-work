@@ -192,6 +192,26 @@ test("early finish is described as landing", () => {
   assert.equal(Logic.describeElapsed(90), "用了 1 分 30 秒。");
 });
 
+test("next step copy hides the summed minutes", () => {
+  assert.equal(Logic.nextStepLine(4, 5), "后面还有 3 步，先不用加总。现在只做这 5 分钟。");
+  assert.equal(Logic.nextStepLine(1, 10), "这是最后一步。现在只做这 10 分钟。");
+  assert.equal(Logic.returnCue("余温"), "昨天有进展。今天从这一小步接上。");
+  assert.equal(Logic.returnCue("凉了"), "隔了一阵也没关系。从这一小步回来。");
+  assert.equal(Logic.returnCue("未开始"), "");
+  assert.equal(Logic.returnCue("正热"), "");
+});
+
+test("tiny goal is one five-minute step", () => {
+  assert.equal(Logic.tinyGoal("   ", 1), null);
+  const goal = Logic.tinyGoal("  只把杯子洗了  ", 50);
+  assert.equal(goal.title, "只把杯子洗了");
+  assert.equal(goal.steps.length, 1);
+  assert.equal(goal.steps[0].title, "只把杯子洗了");
+  assert.equal(goal.steps[0].minutes, 5);
+  assert.equal(goal.steps[0].status, "pending");
+  assert.equal(goal.createdAt, 50);
+});
+
 test("todayDone keeps finished steps from the local day in order", () => {
   const now = at(2026, 10, 18, 18);
   const items = Logic.todayDone(

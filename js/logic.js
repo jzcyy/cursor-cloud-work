@@ -237,6 +237,41 @@ function todayDone(log, now) {
     .sort((a, b) => Number(a.at) - Number(b.at));
 }
 
+  function nextStepLine(pendingCount, minutes) {
+    const mins = Number(minutes) || 0;
+    const pending = Math.max(0, Number(pendingCount) || 0);
+    if (pending <= 1) return `这是最后一步。现在只做这 ${mins} 分钟。`;
+    return `后面还有 ${pending - 1} 步，先不用加总。现在只做这 ${mins} 分钟。`;
+  }
+
+  function returnCue(warmthLabel) {
+    if (warmthLabel === "余温") return "昨天有进展。今天从这一小步接上。";
+    if (warmthLabel === "凉了") return "隔了一阵也没关系。从这一小步回来。";
+    return "";
+  }
+
+  function tinyGoal(title, now) {
+    const text = String(title || "").trim().slice(0, 60);
+    if (!text) return null;
+    const createdAt = now || Date.now();
+    return {
+      id: createId(),
+      title: text,
+      why: "先做这一件很小的事。",
+      createdAt,
+      updatedAt: createdAt,
+      steps: [
+        {
+          id: createId(),
+          title: text,
+          minutes: 5,
+          status: "pending",
+          completedAt: null,
+        },
+      ],
+    };
+  }
+
   function catchUpActive(active, now) {
     if (!active || !active.running) return { active, expired: false };
     if (remainingSeconds(active, now) > 0) return { active, expired: false };
@@ -498,6 +533,9 @@ function todayDone(log, now) {
     shrinkActive,
     describeElapsed,
     todayDone,
+    nextStepLine,
+    returnCue,
+    tinyGoal,
     catchUpActive,
     seedState,
     normalizeState,
